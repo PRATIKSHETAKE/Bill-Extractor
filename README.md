@@ -396,7 +396,7 @@ This project demonstrates:
 
 ## 👨‍💻 Author
 
-Your Name
-AI Intern Project
+Pratik Shetake
+AI Project
 
 ---
