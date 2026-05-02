@@ -1,12 +1,12 @@
-from fastapi import FastAPI, UploadFile, File, Form
-from typing import List, Optional
-import shutil
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from typing import List
 import os
 import uuid
+import shutil
 
 from extractor.gemini_extractor import extract_from_file
 from utils.csv_writer import append_to_csv
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
@@ -21,33 +21,43 @@ app.add_middleware(
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-ALLOWED_TYPES = ["image/png", "image/jpeg", "application/pdf","image/heic", "image/jpg", "image/webp", "image/bmp", ]
+ALLOWED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".pdf", ".heic"]
 
 
 # -------------------------------
-# Helper: Save Uploaded File
+# VALIDATION
+# -------------------------------
+def is_valid_file(filename):
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in ALLOWED_EXTENSIONS
+
+
+# -------------------------------
+# SAVE FILE (FIXED)
 # -------------------------------
 def save_upload(file: UploadFile):
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+    clean_name = os.path.basename(file.filename)  # 🔥 IMPORTANT
+
+    unique_filename = f"{uuid.uuid4()}_{clean_name}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    return file_path
+    return file_path, clean_name
 
 
 # -------------------------------
-# Helper: Process One File
+# PROCESS FILE
 # -------------------------------
-def process_file(file_path, filename=""):
+def process_file(file_path, filename):
     try:
         result = extract_from_file(file_path)
 
         if "error" in result:
             return {"file": filename, "status": "failed", "error": result}
 
-        append_to_csv(result)
+        append_to_csv(result, file_name=filename)
 
         return {"file": filename, "status": "success", "data": result}
 
@@ -60,55 +70,27 @@ def process_file(file_path, filename=""):
 
 
 # -------------------------------
-# MAIN UNIFIED ENDPOINT
+# MAIN API
 # -------------------------------
 @app.post("/extract-bill")
-async def extract_bill(
-    files: Optional[List[UploadFile]] = File(None),
-    folder_path: Optional[str] = Form(None)
-):
+async def extract_bill(files: List[UploadFile] = File(...)):
 
     results = []
 
-    # -------------------------------
-    # CASE 1: Multiple / Single Upload
-    # -------------------------------
-    if files:
-        for file in files:
+    for file in files:
+        filename = os.path.basename(file.filename)
 
-            if file.content_type not in ALLOWED_TYPES:
-                results.append({
-                    "file": file.filename,
-                    "status": "failed",
-                    "error": "Unsupported file type"
-                })
-                continue
+        if not is_valid_file(filename):
+            results.append({
+                "file": filename,
+                "status": "failed",
+                "error": "Unsupported file type"
+            })
+            continue
 
-            file_path = save_upload(file)
-            result = process_file(file_path, file.filename)
-            results.append(result)
-
-    # -------------------------------
-    # CASE 2: Folder Batch Processing
-    # -------------------------------
-    elif folder_path:
-        if not os.path.exists(folder_path):
-            return {"status": "failed", "error": "Folder not found"}
-
-        SUPPORTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".pdf", ".heic"]
-
-        for file in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, file)
-            ext = os.path.splitext(file)[1].lower()
-
-            if ext not in SUPPORTED_EXTENSIONS:
-                continue
-
-            result = process_file(file_path, file)
-            results.append(result)
-
-    else:
-        return {"status": "failed", "error": "No input provided"}
+        file_path, clean_name = save_upload(file)
+        result = process_file(file_path, clean_name)
+        results.append(result)
 
     return {
         "status": "completed",
@@ -119,7 +101,7 @@ async def extract_bill(
 
 
 # -------------------------------
-# Download CSV
+# DOWNLOAD CSV
 # -------------------------------
 from fastapi.responses import FileResponse
 
@@ -130,16 +112,9 @@ def download_csv():
     if not os.path.exists(file_path):
         return {"status": "failed", "error": "CSV not found"}
 
-    return FileResponse(
-        path=file_path,
-        filename="all_bills.csv",
-        media_type="text/csv"
-    )
+    return FileResponse(file_path, filename="all_bills.csv")
 
 
-# -------------------------------
-# Health Check
-# -------------------------------
 @app.get("/")
 def root():
-    return {"message": "Bill Extraction API is running 🚀"}
+    return {"message": "API Running 🚀"}
