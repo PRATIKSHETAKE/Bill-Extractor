@@ -58,7 +58,7 @@ Fields extracted:
 
 ### 🧪 OCR-Based Approach (Tesseract)
 
-We initially explored using OCR.
+I initially explored using OCR.
 
 **How it works:**
 
@@ -385,7 +385,7 @@ bill1.png,267767122167,John Doe,01-04-2026,320,1450,15-04-2026
 
 This project demonstrates:
 
-* AI-powered document processing
+* AI-poIred document processing
 * Backend API development
 * Batch automation
 * Full-stack integration
@@ -397,6 +397,4 @@ This project demonstrates:
 ## 👨‍💻 Author
 
 Pratik Shetake
-AI Project
-
 ---
