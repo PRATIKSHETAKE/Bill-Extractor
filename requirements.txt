@@ -8,3 +8,4 @@ pdf2image
 pytesseract
 openpyxl
 pillow-heif
+python-multipart
