@@ -53,12 +53,6 @@
             color: #e2e8f0;
         }
 
-        .form-control::file-selector-button {
-            background: #1e293b;
-            color: #e2e8f0;
-            border: none;
-        }
-
         .btn-custom {
             background: linear-gradient(135deg, #6366f1, #22d3ee);
             border: none;
@@ -99,15 +93,6 @@
             --bs-table-bg: transparent;
             --bs-table-hover-bg: rgba(99,102,241,0.1);
         }
-
-        .table th {
-            color: #94a3b8;
-            border-bottom: 1px solid rgba(148,163,184,0.2);
-        }
-
-        .table td {
-            border-color: rgba(148,163,184,0.1);
-        }
     </style>
 </head>
 
@@ -143,6 +128,8 @@
 </div>
 
 <script>
+const BASE_URL = "https://bill-extractor-ve47.onrender.com";
+
 async function upload() {
     const fileInput = document.getElementById("fileInput");
     const folderInput = document.getElementById("folderInput");
@@ -151,12 +138,12 @@ async function upload() {
     let formData = new FormData();
 
     if (folderInput.files.length > 0) {
-        resultBox.innerHTML = `📁 Processing folder (${folderInput.files.length})...`;
+        resultBox.innerHTML = "⏳ Processing folder... (Server may take time to wake up)";
         for (let file of folderInput.files) {
             formData.append("files", file);
         }
     } else if (fileInput.files.length > 0) {
-        resultBox.innerHTML = `📄 Processing ${fileInput.files.length} file(s)...`;
+        resultBox.innerHTML = "⏳ Processing files...";
         for (let file of fileInput.files) {
             formData.append("files", file);
         }
@@ -166,17 +153,29 @@ async function upload() {
     }
 
     try {
-        const response = await fetch("http://127.0.0.1:8000/extract-bill", {
+        const response = await fetch(`${BASE_URL}/extract-bill`, {
             method: "POST",
             body: formData
         });
+
+        if (!response.ok) throw new Error("Server error");
 
         const data = await response.json();
         resultBox.innerHTML = formatResult(data);
 
     } catch (err) {
-        resultBox.innerHTML = "❌ Backend error";
+        resultBox.innerHTML = "❌ Backend error or server sleeping (wait 30 sec)";
     }
+}
+
+function downloadCSV(path) {
+    const url = `${BASE_URL}/${path}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "bill_data.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 }
 
 function formatResult(response) {
@@ -193,11 +192,12 @@ function formatResult(response) {
                 <span class="key">Total Files</span>
                 <span class="value">${response.total_files}</span>
             </div>
-            <div class="d-flex justify-content-between">
-                <span class="key">CSV</span>
-                <a href="http://127.0.0.1:8000/${response.csv_file}" target="_blank" class="value">
-                    📥 Download
-                </a>
+
+            <div class="text-center mt-3">
+                <button class="btn btn-custom"
+                    onclick="downloadCSV('${response.csv_file}')">
+                    📥 Download CSV
+                </button>
             </div>
         </div>
 
