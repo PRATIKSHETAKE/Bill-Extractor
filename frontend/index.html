@@ -53,16 +53,31 @@
             color: #e2e8f0;
         }
 
+        .form-control::file-selector-button {
+            background: #6366f1;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+        }
+
         .btn-custom {
             background: linear-gradient(135deg, #6366f1, #22d3ee);
             border: none;
             color: white;
             padding: 12px;
             border-radius: 12px;
+            font-weight: 500;
         }
 
         .btn-custom:hover {
             box-shadow: 0 0 15px rgba(99, 102, 241, 0.5);
+            color: white;
+        }
+
+        .btn-custom:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         .result-card {
@@ -89,16 +104,26 @@
             font-weight: 500;
         }
 
+        .warning-text {
+            color: #facc15;
+            font-weight: 500;
+        }
+
         .table-dark {
             --bs-table-bg: transparent;
             --bs-table-hover-bg: rgba(99,102,241,0.1);
+        }
+
+        .small-note {
+            color: #94a3b8;
+            font-size: 13px;
         }
     </style>
 </head>
 
 <body>
 
-<div class="container mt-5">
+<div class="container mt-5 mb-5">
 
     <!-- HEADER -->
     <div class="text-center mb-4">
@@ -111,15 +136,18 @@
 
         <div class="mb-3 upload-box">
             <label class="form-label">📄 Upload Bill(s)</label>
-            <input type="file" class="form-control" id="fileInput" multiple>
+            <input type="file" class="form-control" id="fileInput" multiple accept=".png,.jpg,.jpeg,.pdf,.heic">
         </div>
 
         <div class="mb-3 upload-box">
             <label class="form-label">📁 OR Select Folder</label>
             <input type="file" class="form-control" id="folderInput" multiple webkitdirectory directory>
+            <div class="small-note mt-2">Folder upload works best in Chrome/Edge.</div>
         </div>
 
-        <button class="btn btn-custom w-100" onclick="upload()">🚀 Extract Data</button>
+        <button id="extractBtn" class="btn btn-custom w-100" onclick="upload()">
+            🚀 Extract Data
+        </button>
     </div>
 
     <!-- RESULTS -->
@@ -134,77 +162,161 @@ async function upload() {
     const fileInput = document.getElementById("fileInput");
     const folderInput = document.getElementById("folderInput");
     const resultBox = document.getElementById("resultBox");
+    const extractBtn = document.getElementById("extractBtn");
 
     let formData = new FormData();
 
     if (folderInput.files.length > 0) {
-        resultBox.innerHTML = "⏳ Processing folder... (Server may take time to wake up)";
+        resultBox.innerHTML = `
+            <div class="result-card p-3">
+                ⏳ Processing folder... Render server may take time if it was sleeping.
+            </div>
+        `;
+
         for (let file of folderInput.files) {
             formData.append("files", file);
         }
+
     } else if (fileInput.files.length > 0) {
-        resultBox.innerHTML = "⏳ Processing files...";
+        resultBox.innerHTML = `
+            <div class="result-card p-3">
+                ⏳ Processing files... Please wait.
+            </div>
+        `;
+
         for (let file of fileInput.files) {
             formData.append("files", file);
         }
+
     } else {
-        resultBox.innerHTML = "❌ Please select files.";
+        resultBox.innerHTML = `
+            <div class="result-card p-3 failed">
+                ❌ Please select at least one file or folder.
+            </div>
+        `;
         return;
     }
 
     try {
+        extractBtn.disabled = true;
+        extractBtn.innerText = "⏳ Extracting...";
+
         const response = await fetch(`${BASE_URL}/extract-bill`, {
             method: "POST",
             body: formData
         });
 
-        if (!response.ok) throw new Error("Server error");
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
 
         const data = await response.json();
         resultBox.innerHTML = formatResult(data);
 
     } catch (err) {
-        resultBox.innerHTML = "❌ Backend error or server sleeping (wait 30 sec)";
+        console.error(err);
+
+        resultBox.innerHTML = `
+            <div class="result-card p-3 failed">
+                ❌ Backend error or Render server is sleeping. Please try again after a few seconds.
+            </div>
+        `;
+
+    } finally {
+        extractBtn.disabled = false;
+        extractBtn.innerText = "🚀 Extract Data";
     }
 }
 
-function downloadCSV(path) {
-    const url = `${BASE_URL}/${path}`;
+
+function downloadCSV() {
+    const url = `${BASE_URL}/download-csv`;
+
     const a = document.createElement("a");
     a.href = url;
-    a.download = "bill_data.csv";
+    a.download = "all_bills.csv";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 }
 
+
+async function checkCSVExistsAndDownload() {
+    try {
+        const response = await fetch(`${BASE_URL}/download-csv`, {
+            method: "GET"
+        });
+
+        if (!response.ok) {
+            alert("CSV not found. Please extract bills first.");
+            return;
+        }
+
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = "all_bills.csv";
+        document.body.appendChild(a);
+        a.click();
+
+        a.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+
+    } catch (error) {
+        console.error(error);
+        alert("Unable to download CSV. Please check if backend is running.");
+    }
+}
+
+
 function formatResult(response) {
+    let successCount = response.results.filter(item => item.status === "success").length;
+    let failedCount = response.results.filter(item => item.status === "failed").length;
+
     let html = `
         <div class="result-card p-3 mb-3">
             <h6>📊 Summary</h6>
+
             <div class="d-flex justify-content-between">
                 <span class="key">Status</span>
                 <span class="${response.status === 'completed' ? 'success' : 'failed'}">
                     ${response.status}
                 </span>
             </div>
+
             <div class="d-flex justify-content-between">
                 <span class="key">Total Files</span>
                 <span class="value">${response.total_files}</span>
             </div>
 
+            <div class="d-flex justify-content-between">
+                <span class="key">Successful</span>
+                <span class="success">${successCount}</span>
+            </div>
+
+            <div class="d-flex justify-content-between">
+                <span class="key">Failed</span>
+                <span class="${failedCount > 0 ? 'failed' : 'success'}">${failedCount}</span>
+            </div>
+
             <div class="text-center mt-3">
-                <button class="btn btn-custom"
-                    onclick="downloadCSV('${response.csv_file}')">
+                <button class="btn btn-custom" onclick="checkCSVExistsAndDownload()">
                     📥 Download CSV
                 </button>
+            </div>
+
+            <div class="small-note text-center mt-2">
+                CSV is generated only after at least one bill is successfully extracted.
             </div>
         </div>
 
         <div class="result-card p-3">
             <h6>📄 Extracted Bills</h6>
+
             <div class="table-responsive">
-                <table class="table table-dark table-hover">
+                <table class="table table-dark table-hover align-middle">
                     <thead>
                         <tr>
                             <th>#</th>
@@ -216,6 +328,7 @@ function formatResult(response) {
                             <th>Units</th>
                             <th>Amount</th>
                             <th>Due Date</th>
+                            <th>Error</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -223,22 +336,44 @@ function formatResult(response) {
 
     response.results.forEach((item, i) => {
         const d = item.data || {};
+
+        let errorMessage = "-";
+
+        if (item.error) {
+            if (typeof item.error === "string") {
+                errorMessage = item.error;
+            } else {
+                errorMessage = item.error.error || "Extraction failed";
+            }
+        }
+
         html += `
             <tr>
                 <td>${i + 1}</td>
-                <td>${item.file}</td>
-                <td class="${item.status === 'success' ? 'success' : 'failed'}">${item.status}</td>
-                <td>${d.consumer_id || '-'}</td>
-                <td>${d.name || '-'}</td>
-                <td>${d.billing_date || '-'}</td>
-                <td>${d.units || '-'}</td>
-                <td>${d.amount || '-'}</td>
-                <td>${d.due_date || '-'}</td>
+                <td>${item.file || "-"}</td>
+                <td class="${item.status === 'success' ? 'success' : 'failed'}">
+                    ${item.status}
+                </td>
+                <td>${d.consumer_id || "-"}</td>
+                <td>${d.name || "-"}</td>
+                <td>${d.billing_date || "-"}</td>
+                <td>${d.units || "-"}</td>
+                <td>${d.amount || "-"}</td>
+                <td>${d.due_date || "-"}</td>
+                <td class="${item.status === 'failed' ? 'failed' : ''}">
+                    ${errorMessage}
+                </td>
             </tr>
         `;
     });
 
-    html += `</tbody></table></div></div>`;
+    html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
     return html;
 }
 </script>
