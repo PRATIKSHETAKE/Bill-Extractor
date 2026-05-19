@@ -35,6 +35,7 @@ def append_to_csv(data, file_name=None):
 
     if os.path.exists(file_path):
         existing_df = pd.read_csv(file_path)
+
         updated_df = pd.concat([existing_df, new_df], ignore_index=True)
 
         updated_df = updated_df.drop_duplicates(
